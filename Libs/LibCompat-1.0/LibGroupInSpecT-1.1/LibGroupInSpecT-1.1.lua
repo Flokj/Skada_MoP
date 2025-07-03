@@ -71,10 +71,6 @@
 --     Returns an array with the set of unit ids for the current group.
 --]]
 
-local WOW_PROJECT_ID = _G.WOW_PROJECT_ID
-local WOW_PROJECT_MAINLINE = _G.WOW_PROJECT_MAINLINE
-if WOW_PROJECT_ID ~= WOW_PROJECT_MAINLINE then return end
-
 local MAJOR, MINOR = "LibGroupInSpecT-1.1", 101
 
 if not LibStub then
@@ -162,23 +158,23 @@ local ClearInspectPlayer = _G.ClearInspectPlayer
 local GetNumSubgroupMembers = _G.GetNumSubgroupMembers
 local GetPlayerInfoByGUID = _G.GetPlayerInfoByGUID
 local GetSpellInfo = _G.GetSpellInfo
-local GetPvpTalentInfoByID = _G.GetPvpTalentInfoByID
-local GetTalentInfo = _G.GetTalentInfo
+local GetPvpTalentInfoByID = _G.GetPvpTalentInfoByID --
+local GetTalentInfo = _G.C_SpecializationInfo.GetTalentInfo
 local GetTalentInfoByID = _G.GetTalentInfoByID
 local IsInRaid = _G.IsInRaid
 
 local GetNumClasses = _G.GetNumClasses
 local GetClassInfo = _G.GetClassInfo
-local GetSpecialization = _G.GetSpecialization
-local GetSpecializationInfo = _G.GetSpecializationInfo
+local GetSpecialization = _G.C_SpecializationInfo.GetSpecialization
+local GetSpecializationInfo = _G.C_SpecializationInfo.GetSpecializationInfo
 local GetInspectSpecialization = _G.GetInspectSpecialization
 local GetSpecializationRoleByID = _G.GetSpecializationRoleByID
-local GetNumSpecializationsForClassID = _G.GetNumSpecializationsForClassID
+local GetNumSpecializationsForClassID = _G.C_SpecializationInfo.GetNumSpecializationsForClassID
 local GetSpecializationInfoForClassID = _G.GetSpecializationInfoForClassID
-local GetInspectSelectedPvpTalent = _G.C_SpecializationInfo.GetInspectSelectedPvpTalent
-local GetPvpTalentSlotInfo = _G.C_SpecializationInfo.GetPvpTalentSlotInfo
-local GetActiveSpecGroup = _G.GetActiveSpecGroup
-local MAX_TALENT_TIERS = _G.MAX_TALENT_TIERS
+local GetInspectSelectedPvpTalent = _G.C_SpecializationInfo.GetInspectSelectedPvpTalent --
+local GetPvpTalentSlotInfo = _G.C_SpecializationInfo.GetPvpTalentSlotInfo --
+local GetActiveSpecGroup = _G.C_SpecializationInfo.GetActiveSpecGroup
+local MAX_TALENT_TIERS = _G.MAX_NUM_TALENT_TIERS
 local NUM_TALENT_COLUMNS = _G.NUM_TALENT_COLUMNS
 
 local UnitExists = _G.UnitExists
@@ -392,14 +388,16 @@ function lib:CacheGameData()
 		if class then
 			for idx = 1, GetNumSpecializationsForClassID(class_id) do
 				local gspec_id, name, description, icon, background = GetSpecializationInfoForClassID(class_id, idx)
-				gspecs[gspec_id] = {}
-				local gspec = gspecs[gspec_id]
-				gspec.idx = idx
-				gspec.name_localized = name
-				gspec.description = description
-				gspec.icon = icon
-				gspec.background = background
-				gspec.role = GetSpecializationRoleByID(gspec_id)
+				if gspec_id then
+					gspecs[gspec_id] = {}
+					local gspec = gspecs[gspec_id]
+					gspec.idx = idx
+					gspec.name_localized = name
+					gspec.description = description
+					gspec.icon = icon
+					gspec.background = background
+					gspec.role = GetSpecializationRoleByID(gspec_id)
+				end
 			end
 
 			self.static_cache.class_to_class_id[class] = class_id

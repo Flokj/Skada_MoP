@@ -4,7 +4,7 @@
 -- @author: Kader B (https://github.com/bkader/LibCompat-1.0)
 --
 
-local MAJOR, MINOR = "LibCompat-1.0-Skada", 41
+local MAJOR, MINOR = "LibCompat-1.0-Skada", 43
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -305,8 +305,7 @@ do
 		__mode = "kv", -- make it weak
 		__index = function(self, guid)
 			if guid then
-				local ctype, pid, _, _, _, id = strsplit("-", guid)
-				id = (ctype == "Player" or ctype == "Item") and tonumber(pid) or tonumber(id) or 0
+				local id = tonumber(guid:sub(7, 10), 16) or 0
 				rawset(self, guid, id) -- cache it
 				return id
 			end
@@ -357,153 +356,61 @@ end
 
 do
 	local rawget = rawget
-	local IS_RETAIL = (_G.WOW_PROJECT_ID == _G.WOW_PROJECT_MAINLINE)
+	local UnitGroupRolesAssigned = UnitGroupRolesAssigned
+	local LGT = LibStub("LibGroupInSpecT-1.1")
 	local GetUnitSpec, GetUnitRole = {}, {}
 
-	if IS_RETAIL then
-		local LGT = LibStub("LibGroupInSpecT-1.1")
+	GetUnitSpec = setmetatable(GetUnitSpec, {
+		__index = function(self, guid)
+			local info = LGT:GetCachedInfo(guid)
+			if not info then return end
 
-		GetUnitSpec = setmetatable(GetUnitSpec, {
-			__index = function(self, guid)
-				local info = LGT:GetCachedInfo(guid)
-				if not info then return end
+			rawset(self, guid, info.global_spec_id)
+			rawset(GetUnitRole, guid, info.spec_role)
 
-				rawset(self, guid, info.global_spec_id)
-				rawset(GetUnitRole, guid, info.spec_role)
+			return info.global_spec_id
+		end,
+		__newindex = function(self, guid, spec)
+			rawset(self, guid, spec)
+		end,
+		__call = function(self, guid)
+			return self[guid]
+		end
+	})
 
-				return info.global_spec_id
-			end,
-			__newindex = function(self, guid, spec)
-				rawset(self, guid, spec)
-			end,
-			__call = function(self, guid)
-				return self[guid]
+	GetUnitRole = setmetatable(GetUnitRole, {
+		__index = function(self, guid)
+			local info = LGT:GetCachedInfo(guid)
+			if info then
+				rawset(self, guid, info.spec_role)
+				rawset(GetUnitSpec, guid, info.global_spec_id)
+				return info.spec_role
 			end
-		})
 
-		GetUnitRole = setmetatable(GetUnitRole, {
-			__index = function(self, guid)
-				local info = LGT:GetCachedInfo(guid)
-				if info then
-					rawset(self, guid, info.spec_role)
-					rawset(GetUnitSpec, guid, info.global_spec_id)
-					return info.spec_role
-				end
+			local unit = LGT:GuidToUnit(guid) or GetUnitIdFromGUID(guid, true)
+			local role = unit and UnitGroupRolesAssigned(unit) or "NONE"
+			rawset(self, guid, role)
+			return role
+		end,
+		__newindex = function(self, guid, role)
+			rawset(self, guid, role)
+		end,
+		__call = function(self, guid)
+			return self[guid]
+		end
+	})
 
-				local unit = LGT:GuidToUnit(guid) or GetUnitIdFromGUID(guid, true)
-				local role = unit and UnitGroupRolesAssigned(unit) or "NONE"
-				rawset(self, guid, role)
-				return role
-			end,
-			__newindex = function(self, guid, role)
-				rawset(self, guid, role)
-			end,
-			__call = function(self, guid)
-				return self[guid]
-			end
-		})
+	LGT:RegisterCallback("GroupInSpecT_Update", function(_, guid, _, info)
+		if not guid or not info then return end
+		rawset(GetUnitSpec, guid, info.global_spec_id or rawget(GetUnitSpec, guid))
+		rawset(GetUnitRole, guid, info.spec_role or rawget(GetUnitRole, guid))
+	end)
 
-		LGT:RegisterCallback("GroupInSpecT_Update", function(_, guid, _, info)
-			if not guid or not info then return end
-			rawset(GetUnitSpec, guid, info.global_spec_id or rawget(GetUnitSpec, guid))
-			rawset(GetUnitRole, guid, info.spec_role or rawget(GetUnitRole, guid))
-		end)
-
-		LGT:RegisterCallback("GroupInSpecT_Remove", function(_, guid)
+	LGT:RegisterCallback("GroupInSpecT_Remove", function(_, guid)
 		if not guid then return end
 		rawset(GetUnitSpec, guid, nil)
 		rawset(GetUnitRole, guid, nil)
-		end)
-	else
-		local MAX_TALENT_TABS = _G.MAX_TALENT_TABS or 3
-
-		local LGT = LibStub("LibGroupTalents-1.0")
-		local LGTRoleTable = {melee = "DAMAGER", caster = "DAMAGER", healer = "HEALER", tank = "TANK"}
-		local FixRoleTable = {HUNTER = "DAMAGER", MAGE = "DAMAGER", ROGUE = "DAMAGER", WARLOCK = "DAMAGER"}
-
-		-- list of class to specs
-		local specsTable = {
-			MAGE = {62, 63, 64},
-			PRIEST = {256, 257, 258},
-			ROGUE = {259, 260, 261},
-			WARLOCK = {265, 266, 267},
-			WARRIOR = {71, 72, 73},
-			PALADIN = {65, 66, 70},
-			DEATHKNIGHT = {250, 251, 252},
-			DRUID = {102, 103, 104, 105},
-			HUNTER = {253, 254, 255},
-			SHAMAN = {262, 263, 264}
-		}
-
-		-- cached talents
-		local cached_talents = setmetatable({}, {__mode = "kv"})
-
-		-- retrieves real spec
-		local function CalculateSpec(guid, n1, n2, n3)
-			local actor = guid and LGT.roster[guid]
-			if not actor or not actor.class or not specsTable[actor.class] then return end
-
-			if not n1 or not n2 or not n3 then
-				local talentGroup = LGT:GetActiveTalentGroup(actor.unit)
-				_, n1, n2, n3 = LGT:GetGUIDTalentSpec(guid, talentGroup)
-				n1, n2, n3 = n1 or 0, n2 or 0, n3 or 0
-			end
-			rawset(cached_talents, guid, format("%s/%s/%s", n1, n2, n3))
-
-			local nx = max(n1, n2, n3) -- highest in points spent
-			if nx == 0 then -- no talents spent anywhere?
-				return 0
-			end
-
-			local index = nx == n1 and 1 or nx == n2 and 2 or nx == n3 and 3
-			if actor.class == "DRUID" and index >= 2 then
-				index = index == 3 and 4 or actor.role == "tank" and 3 or 2
-			end
-
-			return specsTable[actor.class][index] or 0
-		end
-
-		-- cached specs
-		GetUnitSpec = setmetatable(GetUnitSpec, {
-			__index = function(self, guid)
-				local spec = CalculateSpec(guid)
-				rawset(self, guid, spec)
-				return spec
-			end,
-			__newindex = function(self, guid, spec)
-				rawset(self, guid, spec)
-			end,
-			__call = function(self, guid)
-				return self[guid], rawget(cached_talents, guid)
-			end
-		})
-
-		-- cached roles
-		GetUnitRole = setmetatable(GetUnitRole, {
-			__index = function(self, guid)
-				local role = LGTRoleTable[LGT:GetGUIDRole(guid)] or "NONE"
-				rawset(self, guid, role)
-				return role
-			end,
-			__newindex = function(self, guid, role)
-				rawset(self, guid, role)
-			end,
-			__call = function(self, guid)
-				return self[guid]
-			end
-		})
-
-		LGT:RegisterCallback("LibGroupTalents_Update", function(_, guid, _, _, n1, n2, n3)
-			rawset(GetUnitSpec, guid, CalculateSpec(guid, n1, n2, n3))
-		end)
-
-		LGT:RegisterCallback("LibGroupTalents_RoleChange", function(_, guid, _, role, oldrole)
-			rawset(GetUnitRole, guid, LGTRoleTable[role] or "NONE")
-			if oldrole and oldrole ~= role then
-				rawset(GetUnitSpec, guid, nil)
-			end
-		end)
-	end
+	end)
 
 	lib.GetUnitSpec = GetUnitSpec
 	lib.GetUnitRole = GetUnitRole
