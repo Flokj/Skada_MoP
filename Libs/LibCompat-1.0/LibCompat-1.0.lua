@@ -4,7 +4,7 @@
 -- @author: Kader B (https://github.com/bkader/LibCompat-1.0)
 --
 
-local MAJOR, MINOR = "LibCompat-1.0-Skada", 43
+local MAJOR, MINOR = "LibCompat-1.0-Skada", 41
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -305,7 +305,8 @@ do
 		__mode = "kv", -- make it weak
 		__index = function(self, guid)
 			if guid then
-				local id = tonumber(guid:sub(7, 10), 16) or 0
+				local ctype, pid, _, _, _, id = strsplit("-", guid)
+				id = (ctype == "Player" or ctype == "Item") and tonumber(pid) or tonumber(id) or 0
 				rawset(self, guid, id) -- cache it
 				return id
 			end
@@ -356,7 +357,6 @@ end
 
 do
 	local rawget = rawget
-	local UnitGroupRolesAssigned = UnitGroupRolesAssigned
 	local LGT = LibStub("LibGroupInSpecT-1.1")
 	local GetUnitSpec, GetUnitRole = {}, {}
 
