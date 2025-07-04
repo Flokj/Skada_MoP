@@ -92,11 +92,11 @@ local INSPECT_DELAY = 1.5
 local INSPECT_TIMEOUT = 10 -- If we get no notification within 10s, give up on unit
 
 -- XXX WoD compat
-local GetTalentInfo = MAX_NUM_TALENTS and _G.GetTalentInfo or function(index)
+local GetTalentInfo = MAX_NUM_TALENTS and _G.C_SpecializationInfo.GetTalentInfo or function(index)
   local tier = ceil(index / 3)
   local column = index - ((tier - 1) * 3)
-  local groupIndex = GetActiveSpecGroup(false)
-  local talentID, name, iconTexture, selected, available = _G.GetTalentInfo(tier, column, groupIndex)
+  local groupIndex = 1
+  local talentID, name, iconTexture, selected, available = _G.C_SpecializationInfo.GetTalentInfo(tier, column, groupIndex)
   return name, iconTexture, tier, column, selected, available
 end
 local MAX_NUM_TALENTS = MAX_NUM_TALENTS or 21
@@ -160,12 +160,12 @@ local GetNumSubgroupMembers           = _G.GetNumSubgroupMembers
 local GetNumSpecializationsForClassID = _G.C_SpecializationInfo.GetNumSpecializationsForClassID
 local GetPlayerInfoByGUID             = _G.GetPlayerInfoByGUID
 local GetInspectSpecialization        = _G.GetInspectSpecialization
-local GetSpecialization               = _G.GetSpecialization
-local GetSpecializationInfo           = _G.GetSpecializationInfo
+local GetSpecialization               = _G.C_SpecializationInfo.GetSpecialization
+local GetSpecializationInfo           = _G.C_SpecializationInfo.GetSpecializationInfo
 local GetSpecializationInfoForClassID = _G.GetSpecializationInfoForClassID
 local GetSpecializationRoleByID       = _G.GetSpecializationRoleByID
 local GetSpellInfo                    = _G.GetSpellInfo
-local GetTalentInfo                   = _G.GetTalentInfo
+local GetTalentInfo                   = _G.C_SpecializationInfo.GetTalentInfo
 local IsInRaid                        = _G.IsInRaid
 --local NotifyInspect                   = _G.NotifyInspect -- Don't cache, as to avoid missing future hooks
 local GetNumClasses                   = _G.GetNumClasses
@@ -260,7 +260,7 @@ function lib:PLAYER_LOGIN ()
   frame:RegisterEvent("GLYPH_ADDED")
   frame:RegisterEvent("GLYPH_REMOVED")
   frame:RegisterEvent("CHAT_MSG_ADDON")
-  RegisterAddonMessagePrefix (COMMS_PREFIX)
+  C_ChatInfo.RegisterAddonMessagePrefix(COMMS_PREFIX)
 
   local guid = UnitGUID ("player")
   local info = self:BuildInfo ("player")
@@ -310,52 +310,63 @@ lib.static_cache.class_to_class_id = {}      -- [CLASS]         -> class_id
 
 -- Dridzt: I'd love another way but none of the GetTalent* functions return spellID, GetTalentLink() and parsing the link gives talentID that's not related to spellID as well
 -- A quick tooltip scan is cheap though so elegance aside this is a good workaround considering this only runs once
-function lib:CacheGameData ()
+function lib:CacheGameData()
   local tip = CreateFrame ("GameTooltip", "LibGroupInSpecTScanTip", nil, "GameTooltipTemplate")
   tip:SetOwner (UIParent, "ANCHOR_NONE")
 
-  local gspecs = self.static_cache.global_specs
-  gspecs[0] = {} -- Handle no-specialization case
-  for class_id = 1, GetNumClasses () do
-    for idx = 1, GetNumSpecializationsForClassID (class_id) do
-      local gspec_id, name, description, icon, background = GetSpecializationInfoForClassID (class_id, idx)
-      if gspec_id then
-      gspecs[gspec_id] = {}
-      local gspec = gspecs[gspec_id]
-      gspec.idx = idx
-      gspec.name_localized = name
-      gspec.description = description
-      gspec.icon = icon
-      gspec.background = background
-      gspec.role = GetSpecializationRoleByID (gspec_id)
-   end
-    end
+  local gspecs, talents = {}, {}
+  local class_id
 
-    self.static_cache.talent_idx_to_spell_id[class_id] = {}
-    self.static_cache.talents[class_id] = {}
+  for i = 1, GetNumClasses() do
+    local _, _, cid = GetClassInfo(i)
+    class_id = cid
+    gspecs[class_id] = {}
+  end
 
-    local idx2spell = self.static_cache.talent_idx_to_spell_id[class_id]
-    local talents = self.static_cache.talents[class_id]
-    for idx=1, MAX_NUM_TALENTS do
-      tip:ClearLines()
-      tip:SetTalent (idx, true, nil, nil, class_id)
-      local _, _, spell_id = tip:GetSpell ()
+  for i = 1, GetNumSpecializationsForClassID(class_id) do
+    local id, name, description, icon, background, role = GetSpecializationInfoForClassID(class_id, i)
+    gspecs[class_id][i] = {
+      spec_index = i,
+      class_id = class_id,
+      spec_id = id,
+      name_localized = name,
+      description = description,
+      icon = icon,
+      background = background,
+      role = role,
+    }
+  end
+
+  local MAX_NUM_TALENTS = 18
+  local idx2spell = {}
+
+  for idx = 1, MAX_NUM_TALENTS do
+    tip:ClearLines()
+    tip:SetTalent(idx, true, nil, nil, class_id)
+    local _, _, spell_id = tip:GetSpell()
+
+    if type(spell_id) == "number" and spell_id > 0 then
       idx2spell[idx] = spell_id
 
-      local tname, tex, tier, column, sel, avail = GetTalentInfo (idx, true, nil, nil, class_id)
-      talents[spell_id] = {}
+      local name, icon, tier, column = GetTalentInfo(idx, true, nil, nil, class_id)
+
+      if type(talents[spell_id]) ~= "table" then
+        talents[spell_id] = {}
+      end
+
       local talent = talents[spell_id]
       talent.spell_id = spell_id
       talent.idx = idx
-      talent.name_localized = tname
-      talent.icon = tex
+      talent.name_localized = name
+      talent.icon = icon
       talent.tier = tier
       talent.column = column
     end
-
-    local _, class = GetClassInfo (class_id)
-    self.static_cache.class_to_class_id[class] = class_id
   end
+
+  self.static_cache.gspecs = gspecs
+  self.static_cache.talents = talents
+  self.static_cache.idx2spell = idx2spell
 end
 
 
