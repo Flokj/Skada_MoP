@@ -678,7 +678,7 @@ function lib:SendLatestSpecData ()
 
   --[===[@debug@
   debug ("Sending LGIST update to "..scope) --@end-debug@]===]
-  SendAddonMessage(COMMS_PREFIX, datastr, scope)
+  C_ChatInfo.SendAddonMessage(COMMS_PREFIX, datastr, scope)
 end
 
 
